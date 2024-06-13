@@ -14,6 +14,18 @@ Adafruit_NeoPixel strip_short = Adafruit_NeoPixel(LED_NUM_SHORT, PIN_SHORT, NEO_
 // Array of temperature readings at each simulation cell
 static uint8_t heat[NUM_FIRE_LEDS];
 
+// COOLING: How much does the air cool as it rises?
+// Less cooling = taller flames.  More cooling = shorter flames.
+// Default 55, suggested range 20-100 
+uint8_t cooling=75;
+
+// SPARKING: What chance (out of 255) is there that a new spark will be lit?
+// Higher chance = more roaring fire.  Lower chance = more flickery fire.
+// Default 120, suggested range 50-200.
+uint8_t sparking = 35;
+
+CRGBPalette16 gPal;
+
 void setup() {
   strip_long.begin();
   strip_long.setBrightness(100);
@@ -21,22 +33,49 @@ void setup() {
   strip_short.begin();
   strip_short.setBrightness(100);
   strip_short.show();
+
+  // This first palette is the basic 'black body radiation' colors,
+  // which run from black to red to bright yellow to white.
+  // gPal = HeatColors_p;
+  
+  gPal = CRGBPalette16( CRGB::Red,CRGB::DarkOrange, CRGB::Yellow, CRGB::LightYellow);
+  
+  // like the heat colors, but blue/aqua instead of red/yellow
+  // gPal = CRGBPalette16( CRGB::Black, CRGB::Blue, CRGB::Aqua,  CRGB::White);
+  // gPal = ForestColors_p;
+  // gPal = PartyColors_p;
+  // gPal = CloudColors_p;
+  
+  // Third, here's a simpler, three-step gradient, from black to red to white
+  // gPal = CRGBPalette16( CRGB::Black, CRGB::Red, CRGB::White);  
+
+  delay(1000);
+  Serial.printf("Lights for the deathstar-chair project");
+  Serial.printf("https://github.com/makr0/deathstarlights git rev %s\n", GIT_REV );
+
 }
 
 void loop() {
-  animation_idle(&strip_short,&strip_long,0.03,10);
-  Fire2012();
+  static uint32_t lastprint;
+  animation_idle(&strip_short,&strip_long,0.05,7);
+  Fire2012(&strip_long);
   strip_short.show();
   strip_long.show();
   FastLED.delay(1000 / 20);
+//  cooling=map(analogRead(PIN_A5),0,1024,0,255);
+//  sparking=map(analogRead(PIN_A6),0,1024,0,255);
+  if(millis()-lastprint > 100) {
+    lastprint = millis();
+    Serial.printf("cool:%3d spark:%3d\r",cooling,sparking);
+  }
 }
 
 
 void animation_idle(Adafruit_NeoPixel *strip_short, Adafruit_NeoPixel *strip_long,float speed,float wavelength) {
   uint16_t i, j;
     
-    uint32_t darkgreen = strip_short->Color(0,80,0);
-    uint32_t green = strip_short->Color(0,255,0);
+    static uint32_t darkgreen = strip_short->Color(0,80,0);
+    static uint32_t green = strip_short->Color(0,255,0);
 
 
     for(i=0; i< strip_short->numPixels(); i++) {
@@ -44,51 +83,47 @@ void animation_idle(Adafruit_NeoPixel *strip_short, Adafruit_NeoPixel *strip_lon
       int green = max(0,min(255, strip_short->sine8(i * wavelength + millis() * speed )-80));
       int blue = 0;
       uint32_t c = strip_short->Color(red, green, blue);
-      if(i==0) c /=3;
+      if(i==0) c = strip_short->Color(0, 1, 0);
       strip_short->setPixelColor(strip_short->numPixels()-i, c);
       strip_long->setPixelColor(strip_short->numPixels()-i, c);
     }
 }
 
 
-// COOLING: How much does the air cool as it rises?
-// Less cooling = taller flames.  More cooling = shorter flames.
-// Default 50, suggested range 20-100 
-#define COOLING  100
-
-// SPARKING: What chance (out of 255) is there that a new spark will be lit?
-// Higher chance = more roaring fire.  Lower chance = more flickery fire.
-// Default 120, suggested range 50-200.
-#define SPARKING 50
-
-
-void Fire2012()
+void Fire2012(Adafruit_NeoPixel *strip)
 {
   // Step 1.  Cool down every cell a little
     for( int i = 0; i < NUM_FIRE_LEDS; i++) {
-      heat[i] = qsub8( heat[i],  random8(0, ((COOLING * 10) / NUM_FIRE_LEDS) + 2));
+      heat[i] = qsub8(heat[i], random(0, cooling ));
     }
   
-    // Step 2.  Heat from each cell drifts 'up' and diffuses a little
-    for( int k= NUM_FIRE_LEDS - 1; k >= 2; k--) {
-      heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2] ) / 3;
-    }
-    
-    // Step 3.  Randomly ignite new 'sparks' of heat near the bottom
-    if( random8() < SPARKING ) {
-      int y = random8(7);
-      heat[y] = qadd8( heat[y], random8(160,255) );
-    }
+// Step 2. Heat from each cell diffuses a little to the sides
+  int left, right;
+  for (int k = NUM_FIRE_LEDS - 1; k >= 1; k--) {
+    left=k-1;
+    right=k+1;
+    if(left>=0)        heat[left] += qsub8(heat[k]/2,cooling);
+    if(right<NUM_FIRE_LEDS) heat[right] += qsub8(heat[k]/2,cooling);
+  }
 
-    // Step 4.  Map from heat cells to LED colors
-    for( int j = 0; j < NUM_FIRE_LEDS; j++) {
-      CRGB color = HeatColor( heat[j]);
-      int pixelnumber;
-      #ifdef REVERSE_FIRE
-        pixelnumber = (NUM_FIRE_LEDS-1) - j;
-      #else
-        pixelnumber = j;
-      #endif
-      strip_long.setPixelColor(pixelnumber + POS_FIRE_LEDS,color.red,color.green,color.blue);
+  // Step 3. Randomly ignite new 'sparks' anywhere
+  for (int k = NUM_FIRE_LEDS - 1; k >= 1; k--) {
+    if (random(255) < sparking) {
+      heat[k] = qadd8(heat[k], random(80, 180));
     }
+  }
+
+  // Step 4. Convert heat to LED colors
+  for (int j = 0; j < NUM_FIRE_LEDS; j++) {
+    setPixelHeatColor(strip, j+POS_FIRE_LEDS, heat[j]);
+  }
+}
+
+void setPixelHeatColor(Adafruit_NeoPixel *strip, int pixel, byte temperature) {
+    // Scale the heat value from 0-255 down to 0-240
+    // for best results with color palettes.
+    uint8_t colorindex = scale8( temperature, 240);
+    CRGB color = ColorFromPalette( gPal, colorindex);
+    int pixelnumber;
+    strip->setPixelColor(pixel, color.red, color.green,color.blue);
 }
