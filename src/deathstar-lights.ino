@@ -54,7 +54,7 @@ void setup() {
 
   delay(1000);
   Serial.printf("Lights for the deathstar-chair project\n");
-  Serial.printf("%s git rev %s\n",GIT_URL, GIT_REV );
+  Serial.printf("%s commit #%s\n",GIT_URL, GIT_REV );
 
 }
 
