@@ -28,11 +28,14 @@ CRGBPalette16 gPal;
 
 void setup() {
   strip_long.begin();
-  strip_long.setBrightness(100);
-  strip_long.show(); 
   strip_short.begin();
+  strip_long.setBrightness(100);
   strip_short.setBrightness(100);
+  strip_short.fill(strip_short.Color(0,255,0));
   strip_short.show();
+  strip_long.clear();
+  strip_long.fill(strip_short.Color(0,255,0),0,POS_FIRE_LEDS-1);
+  strip_long.show();
 
   // This first palette is the basic 'black body radiation' colors,
   // which run from black to red to bright yellow to white.
@@ -50,8 +53,8 @@ void setup() {
   // gPal = CRGBPalette16( CRGB::Black, CRGB::Red, CRGB::White);  
 
   delay(1000);
-  Serial.printf("Lights for the deathstar-chair project");
-  Serial.printf("https://github.com/makr0/deathstarlights git rev %s\n", GIT_REV );
+  Serial.printf("Lights for the deathstar-chair project\n");
+  Serial.printf("%s git rev %s\n",GIT_URL, GIT_REV );
 
 }
 
@@ -64,6 +67,7 @@ void loop() {
   FastLED.delay(1000 / 20);
 //  cooling=map(analogRead(PIN_A5),0,1024,0,255);
 //  sparking=map(analogRead(PIN_A6),0,1024,0,255);
+  if(Serial.available()) handleSerial();
   if(millis()-lastprint > 100) {
     lastprint = millis();
     Serial.printf("cool:%3d spark:%3d\r",cooling,sparking);
@@ -126,4 +130,26 @@ void setPixelHeatColor(Adafruit_NeoPixel *strip, int pixel, byte temperature) {
     CRGB color = ColorFromPalette( gPal, colorindex);
     int pixelnumber;
     strip->setPixelColor(pixel, color.red, color.green,color.blue);
+}
+
+void handleSerial() {
+  char buffer[3];
+  int i=0;
+  // read 3 bytes
+  while(Serial.available() && i<3) {
+    buffer[i++]=Serial.read();
+  }
+  if(i==3 && buffer[0]==27 && buffer[1]==91) {
+    switch(buffer[2]) {
+      case 65: // up
+        sparking++;break;
+      case 66: // down
+        sparking--;break;
+      case 68: // left
+        cooling--;break;
+      case 67: // right
+        cooling++;break;
+    }
+  }
+
 }
